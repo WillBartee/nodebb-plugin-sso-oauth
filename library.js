@@ -29,42 +29,16 @@
 
 	var authenticationController = module.parent.require('./controllers/authentication');
 
-	/**
-	 * REMEMBER
-	 *   Never save your OAuth Key/Secret or OAuth2 ID/Secret pair in code! It could be published and leaked accidentally.
-	 *   Save it into your config.json file instead:
-	 *
-	 *   {
-	 *     ...
-	 *     "oauth": {
-	 *       "id": "someoauthid",
-	 *       "secret": "youroauthsecret"
-	 *     }
-	 *     ...
-	 *   }
-	 *
-	 *   ... or use environment variables instead:
-	 *
-	 *   `OAUTH__ID=someoauthid OAUTH__SECRET=youroauthsecret node app.js`
-	 */
-
 	var constants = Object.freeze({
-			type: '',	// Either 'oauth' or 'oauth2'
-			name: '',	// Something unique to your OAuth provider in lowercase, like "github", or "nodebb"
-			oauth: {
-				requestTokenURL: '',
-				accessTokenURL: '',
-				userAuthorizationURL: '',
-				consumerKey: nconf.get('oauth:key'),	// don't change this line
-				consumerSecret: nconf.get('oauth:secret'),	// don't change this line
-			},
+			type: 'oauth2',	// Either 'oauth' or 'oauth2'
+			name: 'nova-service',	// Something unique to your OAuth provider in lowercase, like "github", or "nodebb"
 			oauth2: {
-				authorizationURL: '',
-				tokenURL: '',
+				authorizationURL: nconf.get('oauth:service:url') + nconf.get('oauth:service:authPath'),
+				tokenURL: nconf.get('oauth:service:url') + nconf.get('oauth:service:tokenPath'),
 				clientID: nconf.get('oauth:id'),	// don't change this line
 				clientSecret: nconf.get('oauth:secret'),	// don't change this line
 			},
-			userRoute: ''	// This is the address to your app's "user profile" API endpoint (expects JSON)
+			userRoute: '/v1/profile'	// This is the address to your app's "user profile" API endpoint (expects JSON)
 		}),
 		configOk = false,
 		OAuth = {}, passportOAuth, opts;
@@ -81,53 +55,29 @@
 
 	OAuth.getStrategy = function(strategies, callback) {
 		if (configOk) {
-			passportOAuth = require('passport-oauth')[constants.type === 'oauth' ? 'OAuthStrategy' : 'OAuth2Strategy'];
+			passportOAuth = require('passport-oauth').OAuth2Strategy;
 
-			if (constants.type === 'oauth') {
-				// OAuth options
-				opts = constants.oauth;
-				opts.callbackURL = nconf.get('url') + '/auth/' + constants.name + '/callback';
+			// OAuth 2 options
+			opts = constants.oauth2;
+			opts.callbackURL = nconf.get('url') + '/auth/' + constants.name + '/callback';
 
-				passportOAuth.Strategy.prototype.userProfile = function(token, secret, params, done) {
-					this._oauth.get(constants.userRoute, token, secret, function(err, body, res) {
-						if (err) { return done(new InternalOAuthError('failed to fetch user profile', err)); }
+			passportOAuth.Strategy.prototype.userProfile = function(accessToken, done) {
+				this._oauth2.get(constants.userRoute, accessToken, function(err, body, res) {
+					if (err) { return done(new InternalOAuthError('failed to fetch user profile', err)); }
 
-						try {
-							var json = JSON.parse(body);
-							OAuth.parseUserReturn(json, function(err, profile) {
-								if (err) return done(err);
-								profile.provider = constants.name;
+					try {
+						var json = JSON.parse(body);
+						OAuth.parseUserReturn(json, function(err, profile) {
+							if (err) return done(err);
+							profile.provider = constants.name;
 
-								done(null, profile);
-							});
-						} catch(e) {
-							done(e);
-						}
-					});
-				};
-			} else if (constants.type === 'oauth2') {
-				// OAuth 2 options
-				opts = constants.oauth2;
-				opts.callbackURL = nconf.get('url') + '/auth/' + constants.name + '/callback';
-
-				passportOAuth.Strategy.prototype.userProfile = function(accessToken, done) {
-					this._oauth2.get(constants.userRoute, accessToken, function(err, body, res) {
-						if (err) { return done(new InternalOAuthError('failed to fetch user profile', err)); }
-
-						try {
-							var json = JSON.parse(body);
-							OAuth.parseUserReturn(json, function(err, profile) {
-								if (err) return done(err);
-								profile.provider = constants.name;
-
-								done(null, profile);
-							});
-						} catch(e) {
-							done(e);
-						}
-					});
-				};
-			}
+							done(null, profile);
+						});
+					} catch(e) {
+						done(e);
+					}
+				});
+			};
 
 			opts.passReqToCallback = true;
 
@@ -151,7 +101,7 @@
 				name: constants.name,
 				url: '/auth/' + constants.name,
 				callbackURL: '/auth/' + constants.name + '/callback',
-				icon: 'fa-check-square',
+				icon: 'https://nova.cccco.edu/assets/images/favicon.ico',
 				scope: (constants.scope || '').split(',')
 			});
 
@@ -162,6 +112,8 @@
 	};
 
 	OAuth.parseUserReturn = function(data, callback) {
+
+		console.log(`\n\n\n\n\n${JSON.stringify(data)}\n\n\n\n\n\n`);
 		// Alter this section to include whatever data is necessary
 		// NodeBB *requires* the following: id, displayName, emails.
 		// Everything else is optional.
