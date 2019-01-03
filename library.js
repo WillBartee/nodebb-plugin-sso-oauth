@@ -1,21 +1,6 @@
 (function(module) {
 	"use strict";
 
-	/*
-		Welcome to the SSO OAuth plugin! If you're inspecting this code, you're probably looking to
-		hook up NodeBB with your existing OAuth endpoint.
-
-		Step 1: Fill in the "constants" section below with the requisite informaton. Either the "oauth"
-				or "oauth2" section needs to be filled, depending on what you set "type" to.
-
-		Step 2: Give it a whirl. If you see the congrats message, you're doing well so far!
-
-		Step 3: Customise the `parseUserReturn` method to normalise your user route's data return into
-				a format accepted by NodeBB. Instructions are provided there. (Line 146)
-
-		Step 4: If all goes well, you'll be able to login/register via your OAuth endpoint credentials.
-	*/
-
 	var User = module.parent.require('./user'),
 		Groups = module.parent.require('./groups'),
 		meta = module.parent.require('./meta'),
@@ -29,50 +14,27 @@
 
 	var authenticationController = module.parent.require('./controllers/authentication');
 
-	/**
-	 * REMEMBER
-	 *   Never save your OAuth Key/Secret or OAuth2 ID/Secret pair in code! It could be published and leaked accidentally.
-	 *   Save it into your config.json file instead:
-	 *
-	 *   {
-	 *     ...
-	 *     "oauth": {
-	 *       "id": "someoauthid",
-	 *       "secret": "youroauthsecret"
-	 *     }
-	 *     ...
-	 *   }
-	 *
-	 *   ... or use environment variables instead:
-	 *
-	 *   `OAUTH__ID=someoauthid OAUTH__SECRET=youroauthsecret node app.js`
-	 */
+	var InternalOAuthError = module.require('passport-oauth').InternalOAuthError;
 
 	var constants = Object.freeze({
-			type: '',	// Either 'oauth' or 'oauth2'
-			name: '',	// Something unique to your OAuth provider in lowercase, like "github", or "nodebb"
-			oauth: {
-				requestTokenURL: '',
-				accessTokenURL: '',
-				userAuthorizationURL: '',
-				consumerKey: nconf.get('oauth:key'),	// don't change this line
-				consumerSecret: nconf.get('oauth:secret'),	// don't change this line
-			},
+			url: nconf.get('url'),
+			name: nconf.get('oauth:service:providerName'),
+			userRoute: nconf.get('oauth:service:url') + nconf.get('oauth:service:userProfilePath'),
+			authURL: '/auth/' + nconf.get('oauth:service:providerName'),
+			callbackURL: '/auth/' + nconf.get('oauth:service:providerName') + '/callback',
 			oauth2: {
-				authorizationURL: '',
-				tokenURL: '',
-				clientID: nconf.get('oauth:id'),	// don't change this line
-				clientSecret: nconf.get('oauth:secret'),	// don't change this line
+				authorizationURL: nconf.get('oauth:client:url') + nconf.get('oauth:client:loginPath'),
+				tokenURL: nconf.get('oauth:service:url') + nconf.get('oauth:service:tokenPath'),
+				clientID: nconf.get('oauth:id'),
+				clientSecret: nconf.get('oauth:secret'),
 			},
-			userRoute: ''	// This is the address to your app's "user profile" API endpoint (expects JSON)
+			scope: 'read'
 		}),
 		configOk = false,
-		OAuth = {}, passportOAuth, opts;
+		OAuth = {};
 
 	if (!constants.name) {
 		winston.error('[sso-oauth] Please specify a name for your OAuth provider (library.js:32)');
-	} else if (!constants.type || (constants.type !== 'oauth' && constants.type !== 'oauth2')) {
-		winston.error('[sso-oauth] Please specify an OAuth strategy to utilise (library.js:31)');
 	} else if (!constants.userRoute) {
 		winston.error('[sso-oauth] User Route required (library.js:31)');
 	} else {
@@ -81,66 +43,46 @@
 
 	OAuth.getStrategy = function(strategies, callback) {
 		if (configOk) {
-			passportOAuth = require('passport-oauth')[constants.type === 'oauth' ? 'OAuthStrategy' : 'OAuth2Strategy'];
+			const OAuth2Strategy = require('passport-oauth').OAuth2Strategy;
 
-			if (constants.type === 'oauth') {
-				// OAuth options
-				opts = constants.oauth;
-				opts.callbackURL = nconf.get('url') + '/auth/' + constants.name + '/callback';
+			OAuth2Strategy.Strategy.prototype.userProfile = function(accessToken, done) {
+				let strategy = this;
+				strategy._oauth2._useAuthorizationHeaderForGET = true;
+				strategy._oauth2.get(constants.userRoute, accessToken, function(err, body, res) {
+					if (err) {
+						console.error('UserProfileFetchError', err);
+						return done(new InternalOAuthError('failed to fetch user profile', err));
+					}
 
-				passportOAuth.Strategy.prototype.userProfile = function(token, secret, params, done) {
-					this._oauth.get(constants.userRoute, token, secret, function(err, body, res) {
-						if (err) { return done(new InternalOAuthError('failed to fetch user profile', err)); }
+					try {
+						var json = JSON.parse(body);
+						OAuth.parseUserReturn(json, function(err, profile) {
+							if (err) return done(err);
+							profile.provider = constants.name;
 
-						try {
-							var json = JSON.parse(body);
-							OAuth.parseUserReturn(json, function(err, profile) {
-								if (err) return done(err);
-								profile.provider = constants.name;
+							done(null, profile);
+						});
+					} catch(e) {
+						done(e);
+					}
+				});
+			};
 
-								done(null, profile);
-							});
-						} catch(e) {
-							done(e);
-						}
-					});
-				};
-			} else if (constants.type === 'oauth2') {
-				// OAuth 2 options
-				opts = constants.oauth2;
-				opts.callbackURL = nconf.get('url') + '/auth/' + constants.name + '/callback';
 
-				passportOAuth.Strategy.prototype.userProfile = function(accessToken, done) {
-					this._oauth2.get(constants.userRoute, accessToken, function(err, body, res) {
-						if (err) { return done(new InternalOAuthError('failed to fetch user profile', err)); }
+			// OAuth 2 options
+			let opts = Object.assign({}, constants.oauth2, {
+				passReqToCallback: true,
+				callbackURL: constants.url + constants.callbackURL,
+			})
 
-						try {
-							var json = JSON.parse(body);
-							OAuth.parseUserReturn(json, function(err, profile) {
-								if (err) return done(err);
-								profile.provider = constants.name;
-
-								done(null, profile);
-							});
-						} catch(e) {
-							done(e);
-						}
-					});
-				};
-			}
-
-			opts.passReqToCallback = true;
-
-			passport.use(constants.name, new passportOAuth(opts, function(req, token, secret, profile, done) {
+			passport.use(constants.name, new OAuth2Strategy(opts, (req, token, secret, profile, done) => {
 				OAuth.login({
 					oAuthid: profile.id,
 					handle: profile.displayName,
 					email: profile.emails[0].value,
 					isAdmin: profile.isAdmin
-				}, function(err, user) {
-					if (err) {
-						return done(err);
-					}
+				}, (err, user) => {
+					if (err) { return done(err); }
 
 					authenticationController.onSuccessfulLogin(req, user.uid);
 					done(null, user);
@@ -149,8 +91,8 @@
 
 			strategies.push({
 				name: constants.name,
-				url: '/auth/' + constants.name,
-				callbackURL: '/auth/' + constants.name + '/callback',
+				url: constants.authURL,
+				callbackURL: constants.callbackURL,
 				icon: 'fa-check-square',
 				scope: (constants.scope || '').split(',')
 			});
@@ -161,27 +103,30 @@
 		}
 	};
 
+	/**
+	 * Alter this section to include whatever data is necessary
+	 * NodeBB *requires* the following: id, displayName, emails.
+	 * Everything else is optional.
+	 *
+	 * Find out what is available by uncommenting this line:
+	 * console.log(data);
+	 *
+	 * For the format of the profile object for passport
+	 * see: http://www.passportjs.org/docs/profile/#userprofile
+	 */
 	OAuth.parseUserReturn = function(data, callback) {
-		// Alter this section to include whatever data is necessary
-		// NodeBB *requires* the following: id, displayName, emails.
-		// Everything else is optional.
-
-		// Find out what is available by uncommenting this line:
-		// console.log(data);
-
-		var profile = {};
-		profile.id = data.id;
-		profile.displayName = data.name;
-		profile.emails = [{ value: data.email }];
+		data.provider = constants.name;
+		data.displayName = data.first_name + '' + data.last_name;
+		data.name = {
+			familyName: data.last_name,
+			givenName: data.first_name,
+		};
+		data.emails = [{ value: data.email_address, type: 'work' }]
 
 		// Do you want to automatically make somebody an admin? This line might help you do that...
 		// profile.isAdmin = data.isAdmin ? true : false;
 
-		// Delete or comment out the next TWO (2) lines when you are ready to proceed
-		process.stdout.write('===\nAt this point, you\'ll need to customise the above section to id, displayName, and emails into the "profile" object.\n===');
-		return callback(new Error('Congrats! So far so good -- please see server log for details'));
-
-		callback(null, profile);
+		return callback(null, data);
 	}
 
 	OAuth.login = function(payload, callback) {
