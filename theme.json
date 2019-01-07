@@ -1,0 +1,7 @@
+{
+    "id": "nodebb-theme-nova",
+    "name": "NOVA",
+    "description": "Simple Override of the Login page to better guide users to the alternate login page.",
+    "url": "https://github.com/WillBArtee/nodebb-plugin-sso-oauth",
+    "screenshot": "screenshot.png"
+}

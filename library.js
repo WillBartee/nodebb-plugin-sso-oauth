@@ -19,7 +19,10 @@
 	var constants = Object.freeze({
 			url: nconf.get('url'),
 			name: nconf.get('oauth:service:providerName'),
+			linktext: nconf.get('oauth:linktext'),
+			icon: nconf.get('oauth:icon'),
 			userRoute: nconf.get('oauth:service:url') + nconf.get('oauth:service:userProfilePath'),
+			registerURL: nconf.get('oauth:registerlink')+nconf.get('oauth:registercontext'),
 			authURL: '/auth/' + nconf.get('oauth:service:providerName'),
 			callbackURL: '/auth/' + nconf.get('oauth:service:providerName') + '/callback',
 			oauth2: {
@@ -93,7 +96,9 @@
 				name: constants.name,
 				url: constants.authURL,
 				callbackURL: constants.callbackURL,
-				icon: 'fa-check-square',
+				icon: constants.icon,
+				linktext: constants.linktext,
+				registerURL: constants.registerURL,
 				scope: (constants.scope || '').split(',')
 			});
 
@@ -135,46 +140,38 @@
 				return callback(err);
 			}
 
-			if (uid !== null) {
-				// Existing User
-				callback(null, {
-					uid: uid
-				});
-			} else {
-				// New User
+			if (uid !== null) { // Existing User
+				callback(null, { uid: uid });
+			} else { // New User
 				var success = function(uid) {
 					// Save provider-specific information to the user
 					User.setUserField(uid, constants.name + 'Id', payload.oAuthid);
 					db.setObjectField(constants.name + 'Id:uid', payload.oAuthid, uid);
-
 					if (payload.isAdmin) {
 						Groups.join('administrators', uid, function(err) {
-							callback(null, {
-								uid: uid
-							});
+							callback(null, { uid: uid });
 						});
 					} else {
-						callback(null, {
-							uid: uid
-						});
+						callback(null, { uid: uid });
 					}
 				};
 
 				User.getUidByEmail(payload.email, function(err, uid) {
-					if(err) {
+					if (err) {
 						return callback(err);
 					}
 
 					if (!uid) {
-						User.create({
+						let userObject = {
 							username: payload.handle,
 							email: payload.email
-						}, function(err, uid) {
-							if(err) {
-								return callback(err);
+						};
+						User.create(userObject, function(err, uid) {
+							if (err) {
+								callback(err);
+							} else {
+								success(uid);
 							}
-
-							success(uid);
 						});
 					} else {
 						success(uid); // Existing account -- merge
