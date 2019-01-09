@@ -15,3 +15,40 @@ NodeBB Plugin that allows users to login/register via any configured OAuth provi
 ## Trouble?
 
 Find us on [the community forums](http://community.nodebb.org)!
+
+##### Sample Config file
+
+```JSON
+{
+    "url": "http://localhost:4567",
+    "secret": "somesecret",
+    "database": "mongo",
+    "mongo": {
+        "host": "127.0.0.1",
+        "port": "27017",
+        "username": "nodebb",
+        "password": "nodebb",
+        "database": "nodebb",
+        "uri": ""
+    },
+    "port": "4567",
+    "oauth": {
+      "id": "abc123",
+      "secret": "somepassword",
+      "linktext": "Click Here to Login With NOVA",
+      "registerlink": "http://localhost:4200/sign-up/",
+      "registercontext": "ZXlKaGJHY2lPaUpJVXpJMU5pSXN5LmV5SnlaV1JwY21WamRGVnliQ0",
+      "icon": "https://nova.cccco.edu/assets/images/favicon.ico",
+      "service": {
+        "providerName": "nova-service",
+        "url": "http://localhost:10010",
+        "tokenPath": "/v1/oauth/token",
+        "userProfilePath": "/v1/oauth/user"
+      },
+      "client": {
+        "url": "http://localhost:4200",
+        "loginPath": "/login"
+      }
+    }
+}
+```
